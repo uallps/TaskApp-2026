@@ -9,6 +9,7 @@ import SwiftUI
 
 struct TaskListView: View {
     @StateObject var viewModel = TaskListViewModel()
+    @State private var showingSettings = false
 
     var body: some View {
         VStack{
@@ -32,11 +33,25 @@ struct TaskListView: View {
                     }
                 }
                 .toolbar {
-                    Button("Añadir Tarea") {
-                        let newTask = Task(title:"Nueva Tarea")
-                        viewModel.addTask(task:newTask)
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Añadir Tarea") {
+                            let newTask = Task(title:"Nueva Tarea")
+                            viewModel.addTask(task:newTask)
+                        }
                     }
-                }.navigationTitle("Tareas")
+                    
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button {
+                            showingSettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                        }
+                    }
+                }
+                .navigationTitle("Tareas")
+                .sheet(isPresented: $showingSettings) {
+                    SettingsView(taskViewModel: viewModel)
+                }
             }
         }
     }
