@@ -5,12 +5,14 @@
 //  Created by Francisco José García García on 15/10/25.
 //
 import Foundation
+import SwiftData
 
-struct Task: Identifiable, Codable {
+@Model
+class Task: Identifiable {
     let id: UUID
     var title: String
     var isCompleted: Bool = false
-    var dueDate: Date? 
+    var dueDate: Date?
     var priority: Priority?
     var reminderDate: Date?
     

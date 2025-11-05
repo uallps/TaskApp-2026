@@ -1,0 +1,531 @@
+= Introducción a SwiftData
+
+== ¿Qué es SwiftData?
+
+SwiftData es un framework de Apple introducido en iOS 17, macOS 14, watchOS 10 y tvOS 17 que simplifica la persistencia de datos en aplicaciones SwiftUI. Proporciona una forma declarativa y type-safe de trabajar con bases de datos, eliminando la necesidad de escribir código SQL o Core Data boilerplate.
+
+=== ModelContainer y ModelContext: Los componentes principales
+
+SwiftData se basa en dos componentes fundamentales: `ModelContainer` y `ModelContext`.
+
+==== ModelContainer
+
+El `ModelContainer` es el contenedor principal que gestiona la base de datos subyacente. Es responsable de:
+
+* **Configuración del almacenamiento**: Define dónde y cómo se almacenan los datos (SQLite por defecto)
+* **Gestión del esquema**: Maneja la estructura de la base de datos y las migraciones automáticas
+* **Coordinación de contextos**: Proporciona contextos de modelo para interactuar con los datos
+
+[source,swift]
+----
+let container = try ModelContainer(for: [Task.self, Persona.self])
+----
+
+En una aplicación SwiftUI, se configura a nivel de `Scene`:
+
+[source,swift]
+----
+@main
+struct TaskApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .modelContainer(for: [Task.self]) // Crea y configura el ModelContainer
+    }
+}
+----
+
+==== ModelContext
+
+El `ModelContext` es la interfaz principal para realizar operaciones CRUD en los datos. Actúa como un "espacio de trabajo" donde:
+
+* **Realizas consultas**: Usando `FetchDescriptor` para obtener datos
+* **Modificas datos**: Insertar, actualizar, eliminar objetos
+* **Guardas cambios**: Aplicar cambios a la base de datos persistente
+* **Deshaces cambios**: Revertir modificaciones no guardadas
+
+[source,swift]
+----
+let context = ModelContext(modelContainer)
+
+// Insertar
+let task = Task(title: "Nueva tarea")
+context.insert(task)
+
+// Consultar
+let descriptor = FetchDescriptor<Task>()
+let tasks = try context.fetch(descriptor)
+
+// Guardar
+try context.save()
+
+// Eliminar
+context.delete(task)
+----
+
+===== Inyección del ModelContext en SwiftUI
+
+SwiftData se integra perfectamente con SwiftUI mediante el entorno:
+
+[source,swift]
+----
+struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext // <1>
+    
+    var body: some View {
+        // El modelContext está disponible automáticamente
+    }
+}
+----
+<1> El ModelContext se inyecta desde el entorno de SwiftUI
+
+===== Relación entre ModelContainer y ModelContext
+
+* Un `ModelContainer` puede tener múltiples `ModelContext`
+* Cada `ModelContext` pertenece a un `ModelContainer`
+* Los cambios en un contexto no afectan otros contextos hasta que se guardan
+* Los contextos permiten trabajar con datos de forma aislada (útil para edición temporal)
+
+=== Características principales
+
+* **Declarativo**: Usa macros como `@Model` para definir modelos de datos
+* **Type-safe**: El compilador verifica los tipos en tiempo de compilación
+* **Integración con SwiftUI**: Se integra automáticamente con SwiftUI para actualizaciones en tiempo real
+* **Migraciones automáticas**: Maneja cambios en el esquema automáticamente
+* **Soporte para relaciones**: Maneja relaciones uno-a-uno, uno-a-muchos y muchos-a-muchos
+
+== Ejemplo general
+
+=== Definición del modelo
+
+[source,swift]
+----
+import SwiftData
+
+@Model
+class Persona {
+    let id: UUID
+    var nombre: String
+    var edad: Int
+    var email: String?
+
+    init(nombre: String, edad: Int, email: String? = nil) {
+        self.id = UUID()
+        self.nombre = nombre
+        self.edad = edad
+        self.email = email
+    }
+}
+----
+
+=== Configuración en la App
+
+[source,swift]
+----
+import SwiftUI
+import SwiftData
+
+@main
+struct MiApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .modelContainer(for: [Persona.self]) // <1>
+    }
+}
+----
+<1> Configura el contenedor de modelos para la app
+
+=== Operaciones CRUD
+
+[source,swift]
+----
+import SwiftUI
+import SwiftData
+
+struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext // <1>
+    @Query private var personas: [Persona] // <2>
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(personas) { persona in
+                    Text("\(persona.nombre), \(persona.edad) años")
+                }
+                .onDelete(perform: deletePersona)
+            }
+            .toolbar {
+                Button("Añadir") {
+                    addPersona()
+                }
+            }
+        }
+    }
+
+    private func addPersona() {
+        let nuevaPersona = Persona(nombre: "Juan", edad: 25)
+        modelContext.insert(nuevaPersona) // <3>
+    }
+
+    private func deletePersona(at offsets: IndexSet) {
+        for index in offsets {
+            modelContext.delete(personas[index]) // <4>
+        }
+    }
+}
+----
+<1> Inyecta el contexto del modelo desde el entorno
+<2> Consulta automática de todas las personas
+<3> Inserta una nueva persona
+<4> Elimina una persona
+
+== Ejemplo específico: TaskApp
+
+En nuestra aplicación TaskApp, hemos implementado SwiftData como una opción de almacenamiento alternativa al JSON. Veamos cómo se integra.
+
+=== Modelo Task con SwiftData
+
+[source,swift]
+----
+import Foundation
+import SwiftData
+
+@Model
+class Task: Identifiable {
+    let id: UUID
+    var title: String
+    var isCompleted: Bool = false
+    var dueDate: Date?
+    var priority: Priority?
+    var reminderDate: Date?
+
+    init(title: String, isCompleted: Bool = false, dueDate: Date? = nil, priority: Priority? = nil, reminderDate: Date? = nil) {
+        self.id = UUID()
+        self.title = title
+        self.isCompleted = isCompleted
+        self.dueDate = dueDate
+        self.priority = priority
+        self.reminderDate = reminderDate
+    }
+}
+
+enum Priority: String, Codable {
+    case low, medium, high
+}
+----
+
+*Cambios realizados:*
+
+* Cambiado de `struct` a `class`
+* Añadido `@Model` macro
+* Removido `Codable` (SwiftData lo maneja automáticamente)
+* Importado `SwiftData`
+
+=== Proveedor de almacenamiento SwiftData
+
+[source,swift]
+----
+import Foundation
+import SwiftData
+
+class SwiftDataStorageProvider: StorageProvider {
+    private let modelContainer: ModelContainer
+    private let modelContext: ModelContext
+
+    init() throws {
+        self.modelContainer = try ModelContainer(for: Task.self)
+        self.modelContext = ModelContext(modelContainer)
+    }
+
+    func loadTasks() async throws -> [Task] {
+        let descriptor = FetchDescriptor<Task>()
+        return try modelContext.fetch(descriptor)
+    }
+
+    func saveTasks(tasks: [Task]) async throws {
+        // Delete existing tasks
+        try modelContext.delete(model: Task.self)
+        // Insert new tasks
+        for task in tasks {
+            modelContext.insert(task)
+        }
+        try modelContext.save()
+    }
+}
+----
+
+=== Configuración de la App
+
+[source,swift]
+----
+import SwiftUI
+import SwiftData
+
+@main
+struct TaskApp: App {
+    let appConfig = AppConfig()
+
+    var body: some Scene {
+        WindowGroup {
+            // ... vistas ...
+        }
+        .environmentObject(appConfig)
+        .modelContainer(for: [Task.self]) // <1>
+    }
+}
+----
+<1> Configura SwiftData para el modelo Task
+
+=== Selección del tipo de almacenamiento
+
+[source,swift]
+----
+enum StorageType: String, CaseIterable {
+    case json = "json"
+    case swiftdata = "swiftdata"
+}
+
+class AppConfig: ObservableObject {
+    @AppStorage("storageType")
+    var storageType: StorageType = .json
+}
+----
+
+En el ViewModel:
+
+[source,swift]
+----
+@MainActor
+class TaskListViewModel: ObservableObject {
+    private let storageProvider: StorageProvider
+
+    init(appConfig: AppConfig) {
+        switch appConfig.storageType {
+        case .swiftdata:
+            do {
+                self.storageProvider = try SwiftDataStorageProvider()
+            } catch {
+                print("Error initializing SwiftDataStorageProvider: \(error)")
+                // Fallback to JSON
+                self.storageProvider = JSONStorageProvider()
+            }
+        case .json:
+            self.storageProvider = JSONStorageProvider()
+        }
+    }
+    // ... resto del código
+}
+----
+
+=== Interfaz de configuración
+
+[source,swift]
+----
+struct SettingsView: View {
+    @EnvironmentObject private var appConfig: AppConfig
+
+    var body: some View {
+        Form {
+            Section(header: Text("Storage")) {
+                Picker("Storage Type", selection: $appConfig.storageType) {
+                    ForEach(StorageType.allCases, id: \.self) { type in
+                        Text(type.rawValue.capitalized).tag(type)
+                    }
+                }
+                .pickerStyle(SegmentedPickerStyle())
+            }
+        }
+    }
+}
+----
+
+== Ventajas de SwiftData
+
+* **Simplicidad**: Menos código boilerplate comparado con Core Data
+* **Type safety**: Errores de tipos detectados en compilación
+* **Integración**: Funciona perfectamente con SwiftUI
+* **Migraciones**: Maneja cambios en el esquema automáticamente
+* **Performance**: Optimizado para iOS/macOS
+
+== Consideraciones
+
+* Disponible desde iOS 17/macOS 14
+* Requiere cambiar structs a classes para modelos
+* Las relaciones se definen con macros especiales
+* El contexto del modelo debe ser manejado cuidadosamente en apps multi-hilo
+
+== Conclusión
+
+SwiftData representa el futuro de la persistencia de datos en el ecosistema Apple, ofreciendo una API moderna y declarativa que se integra perfectamente con SwiftUI. En nuestro ejemplo de TaskApp, hemos visto cómo migrar de un sistema de archivos JSON a una base de datos SwiftData manteniendo la misma interfaz de StorageProvider.
+
+=== Nota importante sobre ModelContainer
+
+En la implementación actual del `SwiftDataStorageProvider`, creamos nuestro propio `ModelContainer`:
+
+[source,swift]
+----
+class SwiftDataStorageProvider: StorageProvider {
+    private let modelContainer: ModelContainer
+    
+    init() throws {
+        self.modelContainer = try ModelContainer(for: Task.self) // <1>
+        self.modelContext = ModelContext(modelContainer)
+    }
+    // ...
+}
+----
+<1> Crea un ModelContainer independiente
+
+Sin embargo, en `TaskApp.swift` también configuramos un `ModelContainer` a nivel de app:
+
+[source,swift]
+----
+.modelContainer(for: [Task.self]) // Configurado en la Scene
+----
+
+**¿Es esto necesario?** Técnicamente no es obligatorio, pero hay implicaciones importantes:
+
+* **Dos contenedores**: El provider y la app tienen contenedores separados
+* **Base de datos compartida**: Ambos acceden a la misma base de datos SQLite
+* **Posibles conflictos**: Cambios en un contenedor podrían no ser visibles inmediatamente en el otro
+
+**Mejor práctica recomendada**: Usar un solo `ModelContainer` compartido. Una forma de mejorar esto sería modificar el provider para recibir el `ModelContext` como parámetro:
+
+[source,swift]
+----
+class SwiftDataStorageProvider: StorageProvider {
+    private let modelContext: ModelContext
+    
+    init(modelContext: ModelContext) { // <1>
+        self.modelContext = modelContext
+    }
+    
+    // ... métodos usan el modelContext compartido
+}
+----
+<1> Recibe el ModelContext en lugar de crear su propio container
+
+Luego, en el ViewModel:
+
+[source,swift]
+----
+init(appConfig: AppConfig) {
+    switch appConfig.storageType {
+    case .swiftdata:
+        // Obtener el modelContext del environment (requiere refactor)
+        self.storageProvider = SwiftDataStorageProvider(modelContext: modelContext)
+    case .json:
+        self.storageProvider = JSONStorageProvider()
+    }
+}
+----
+
+Esta aproximación asegura consistencia entre las vistas y el provider de almacenamiento.
+
+=== Hacer SwiftDataStorageProvider compartido sin modificar la estructura
+
+Si quieres mantener la implementación actual pero hacer que el `SwiftDataStorageProvider` sea compartido por toda la aplicación, puedes usar el **patrón Singleton** o crear una instancia compartida en `AppConfig`.
+
+==== Opción 1: Patrón Singleton
+
+[source,swift]
+----
+class SwiftDataStorageProvider: StorageProvider {
+    static let shared = try! SwiftDataStorageProvider() // <1>
+    
+    private let modelContainer: ModelContainer
+    private let modelContext: ModelContext
+
+    private init() throws { // <2>
+        self.modelContainer = try ModelContainer(for: Task.self)
+        self.modelContext = ModelContext(modelContainer)
+    }
+
+    func loadTasks() async throws -> [Task] {
+        let descriptor = FetchDescriptor<Task>()
+        return try modelContext.fetch(descriptor)
+    }
+
+    func saveTasks(tasks: [Task]) async throws {
+        try modelContext.delete(model: Task.self)
+        for task in tasks {
+            modelContext.insert(task)
+        }
+        try modelContext.save()
+    }
+}
+----
+<1> Instancia compartida accesible globalmente
+<2> Constructor privado para evitar instancias múltiples
+
+Luego, en `AppConfig`:
+
+[source,swift]
+----
+class AppConfig: ObservableObject {
+    @AppStorage("storageType")
+    var storageType: StorageType = .json
+    
+    // Provider compartido basado en el tipo seleccionado
+    var storageProvider: StorageProvider {
+        switch storageType {
+        case .swiftdata:
+            return SwiftDataStorageProvider.shared // <1>
+        case .json:
+            return JSONStorageProvider() // <2>
+        }
+    }
+}
+----
+<1> Retorna la instancia compartida de SwiftData
+<2> Para JSON, crea nueva instancia (o podrías hacer singleton también)
+
+Y en el `TaskListViewModel`:
+
+[source,swift]
+----
+@MainActor
+class TaskListViewModel: ObservableObject {
+    private let storageProvider: StorageProvider
+    
+    init(appConfig: AppConfig) {
+        self.storageProvider = appConfig.storageProvider // <1>
+    }
+    // ... resto del código
+}
+----
+<1> Usa el provider del AppConfig
+
+==== Opción 2: Instancia compartida en AppConfig
+
+Si prefieres no usar singleton global:
+
+[source,swift]
+----
+class AppConfig: ObservableObject {
+    @AppStorage("storageType")
+    var storageType: StorageType = .json
+    
+    // Instancia compartida del provider SwiftData
+    private var swiftDataProvider: SwiftDataStorageProvider?
+    
+    var storageProvider: StorageProvider {
+        switch storageType {
+        case .swiftdata:
+            if swiftDataProvider == nil {
+                swiftDataProvider = try? SwiftDataStorageProvider() // <1>
+            }
+            return swiftDataProvider ?? JSONStorageProvider() // <2>
+        case .json:
+            return JSONStorageProvider()
+        }
+    }
+}
+----
+<1> Lazy initialization de la instancia compartida
+<2> Fallback a JSON si falla la inicialización
+
+Esta aproximación mantiene la flexibilidad de cambiar entre tipos de almacenamiento mientras asegura que `SwiftDataStorageProvider` se reutilice cuando esté seleccionado.

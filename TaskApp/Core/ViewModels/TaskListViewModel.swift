@@ -13,8 +13,19 @@ class TaskListViewModel: ObservableObject {
     
     private let storageProvider: StorageProvider
     
-    init(storageProvider: StorageProvider = JSONStorageProvider()) {
-        self.storageProvider = storageProvider
+    init(appConfig: AppConfig) {
+        switch appConfig.storageType {
+        case .swiftdata:
+            do {
+                self.storageProvider = try SwiftDataStorageProvider()
+            } catch {
+                print("Error initializing SwiftDataStorageProvider: \(error)")
+                // Fallback to JSON
+                self.storageProvider = JSONStorageProvider()
+            }
+        case .json:
+            self.storageProvider = JSONStorageProvider()
+        }
     }
     
     @Published var tasks: [Task] = [

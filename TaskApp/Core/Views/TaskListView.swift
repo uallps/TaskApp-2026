@@ -8,10 +8,11 @@ import Foundation
 import SwiftUI
 
 struct TaskListView: View {
+    @EnvironmentObject var appConfig: AppConfig
     @StateObject private var viewModel: TaskListViewModel
     
-    init(storageProvider: StorageProvider = JSONStorageProvider()){
-        _viewModel = StateObject(wrappedValue: TaskListViewModel(storageProvider: storageProvider))
+    init() {
+        _viewModel = StateObject(wrappedValue: TaskListViewModel(appConfig: AppConfig()))
     }
     
     var body: some View {

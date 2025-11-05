@@ -10,6 +10,14 @@ struct SettingsView: View {
                 Toggle("Show Priorities", isOn: $appConfig.showPriorities)
                 Toggle("Enable Reminders", isOn: $appConfig.enableReminders)
             }
+            Section(header: Text("Storage")) {
+                Picker("Storage Type", selection: $appConfig.storageType) {
+                    ForEach(StorageType.allCases, id: \.self) { type in
+                        Text(type.rawValue.capitalized).tag(type)
+                    }
+                }
+                .pickerStyle(SegmentedPickerStyle())
+            }
         }
         .navigationTitle("Settings")
     }

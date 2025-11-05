@@ -7,6 +7,11 @@
 import SwiftUI
 import Combine
 
+enum StorageType: String, CaseIterable {
+    case json = "json"
+    case swiftdata = "swiftdata"
+}
+
 class AppConfig: ObservableObject {
     @AppStorage("showDueDates")
     var showDueDates: Bool = true
@@ -16,4 +21,7 @@ class AppConfig: ObservableObject {
 
     @AppStorage("enableReminders")
     var enableReminders: Bool = true
+
+    @AppStorage("storageType")
+    var storageType: StorageType = .json
 }
