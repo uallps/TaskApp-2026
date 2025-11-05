@@ -1,0 +1,264 @@
+= Arquitectura Modular de Features en TaskApp con SwiftData
+
+== Introducción
+
+En el desarrollo de TaskApp, hemos evolucionado hacia una arquitectura modular para gestionar features como "priority", "due dates" y otras potenciales. El objetivo es permitir que cada feature añada propiedades y lógica al `Task` sin acoplarlo directamente, manteniendo la flexibilidad y escalabilidad. Usando SwiftData, implementamos relaciones unilaterales (donde las features conocen al `Task` vía `taskId`, pero no viceversa) y un patrón observable para eliminaciones en cascada automáticas.
+
+Esta arquitectura sigue principios de clean architecture, separando responsabilidades en capas (`Core`, `Features`, `Infrastructure`), y asegura que `Task` permanezca agnóstico de features específicas.
+
+== Problema Original
+
+Inicialmente, `Task` incluía todas las propiedades (title, isCompleted, priority, dueDate, etc.) en un solo modelo. Esto llevaba a:
+
+- Acoplamiento fuerte: Cambiar una feature afectaba `Task`.
+- Dificultad para activar/desactivar features.
+- Código monolítico en vistas y ViewModels.
+
+== Solución: Arquitectura Modular con SwiftData
+
+=== Principios Clave
+
+- **Composición sobre herencia**: `Task` es base; features lo extienden indirectamente.
+- **Agnosticismo de Task**: `Task` no conoce features; usa `id` como enlace.
+- **Relaciones unilaterales en SwiftData**: Features tienen `taskId: UUID` para referenciar `Task`.
+- **Patrón observable**: Un `FeatureManager` notifica eliminaciones para cascadas automáticas.
+- **Configuración dinámica**: `AppConfig` activa features y registra observers.
+
+=== Estructura de Carpetas
+
+```
+TaskApp/
+  Core/
+    Models/
+      Task.swift  # Modelo base agnóstico
+    Services/
+      FeatureManager.swift  # Manager observable
+    Protocols/
+      FeatureObserver.swift  # Protocolo para observers
+  Features/
+    Priority/  # Feature específica
+      Models/
+        PriorityFeature.swift
+      Services/
+        PriorityFeatureObserver.swift
+      ViewModels/
+        PriorityViewModel.swift
+      Views/
+        PriorityPickerView.swift
+  Infrastructure/
+    Persistence/
+      SwiftDataStorageProvider.swift  # Actualizado para features
+  Application/
+    AppConfig.swift  # Configuración de features
+    TaskApp.swift  # Registro de observers
+```
+
+== Componentes Principales
+
+=== Modelo Task (Agnóstico)
+
+[source,swift]
+----
+import SwiftData
+
+@Model
+class Task: Identifiable {
+    let id: UUID
+    var title: String
+    var isCompleted: Bool = false
+    
+    init(title: String, isCompleted: Bool = false) {
+        self.id = UUID()
+        self.title = title
+        self.isCompleted = isCompleted
+    }
+}
+----
+
+- Solo propiedades base.
+- No referencias a features.
+
+=== Modelo de Feature (Ejemplo: Priority)
+
+[source,swift]
+----
+import SwiftData
+
+@Model
+class PriorityFeature {
+    let id: UUID
+    var taskId: UUID  // Enlace unilateral a Task
+    var level: Priority?
+    
+    init(taskId: UUID, level: Priority? = nil) {
+        self.id = UUID()
+        self.taskId = taskId
+        self.level = level
+    }
+}
+
+enum Priority: String, Codable {
+    case low, medium, high
+}
+----
+
+- Conoce a `Task` vía `taskId`.
+- Registrado en `ModelContainer`: `.modelContainer(for: [Task.self, PriorityFeature.self])`.
+
+=== Protocolo FeatureObserver
+
+[source,swift]
+----
+protocol FeatureObserver {
+    func onTaskDeleted(taskId: UUID, context: ModelContext) async
+}
+----
+
+- Define cómo reaccionan las features a eventos (ej. eliminación).
+
+=== FeatureManager (Observable)
+
+[source,swift]
+----
+class FeatureManager {
+    static let shared = FeatureManager()
+    
+    private var observers: [FeatureObserver] = []
+    
+    private init() {}
+    
+    func registerObserver(_ observer: FeatureObserver) {
+        observers.append(observer)
+    }
+    
+    func notifyTaskDeleted(taskId: UUID, context: ModelContext) async {
+        for observer in observers {
+            await observer.onTaskDeleted(taskId: taskId, context: context)
+        }
+    }
+}
+----
+
+- Singleton para coordinar observers.
+- Notifica eliminaciones para cascadas.
+
+=== Observer de Feature (Ejemplo: Priority)
+
+[source,swift]
+----
+class PriorityFeatureObserver: FeatureObserver {
+    func onTaskDeleted(taskId: UUID, context: ModelContext) async {
+        let descriptor = FetchDescriptor<PriorityFeature>(predicate: #Predicate { $0.taskId == taskId })
+        if let features = try? context.fetch(descriptor) {
+            for feature in features {
+                context.delete(feature)
+            }
+        }
+        try? context.save()
+    }
+}
+----
+
+- Borra `PriorityFeature` asociados al eliminar un `Task`.
+
+=== Configuración en App
+
+[source,swift]
+----
+@main
+struct TaskApp: App {
+    let appConfig = AppConfig()
+    
+    init() {
+        // Registrar observers de features activas
+        if appConfig.isFeatureActive(.priority) {
+            FeatureManager.shared.registerObserver(PriorityFeatureObserver())
+        }
+    }
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .modelContainer(for: [Task.self, PriorityFeature.self])
+        .environmentObject(appConfig)
+    }
+}
+----
+
+- Registra observers dinámicamente basado en `AppConfig`.
+
+=== AppConfig con Features
+
+[source,swift]
+----
+enum FeatureType {
+    case priority
+}
+
+class AppConfig: ObservableObject {
+    @AppStorage("activeFeatures") var activeFeatures: [FeatureType] = [.priority]
+    
+    func isFeatureActive(_ feature: FeatureType) -> Bool {
+        activeFeatures.contains(feature)
+    }
+}
+----
+
+- Lista de features activas.
+
+=== Operaciones en ViewModel
+
+[source,swift]
+----
+@MainActor
+class TaskListViewModel: ObservableObject {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var tasks: [Task]
+    @Query private var priorities: [PriorityFeature]  // Consulta separada
+    
+    func deleteTask(at offsets: IndexSet) {
+        for index in offsets {
+            let task = tasks[index]
+            modelContext.delete(task)
+            // Notificar cascada
+            Task {
+                await FeatureManager.shared.notifyTaskDeleted(taskId: task.id, context: modelContext)
+            }
+        }
+        try? modelContext.save()
+    }
+    
+    func addTaskWithPriority(title: String, priority: Priority?) {
+        let task = Task(title: title)
+        modelContext.insert(task)
+        if let priority = priority {
+            let feature = PriorityFeature(taskId: task.id, level: priority)
+            modelContext.insert(feature)
+        }
+        try? modelContext.save()
+    }
+}
+----
+
+- Consultas separadas para `Task` y features.
+- Unión manual: `priorities.first { $0.taskId == task.id }`.
+
+== Ventajas
+
+- **Modularidad**: Features independientes; añade sin tocar `Task`.
+- **Agnosticismo**: `Task` no cambia con nuevas features.
+- **Integridad**: Eliminaciones en cascada automáticas vía observers.
+- **Escalabilidad**: Fácil añadir features (ej. DueDateFeature).
+- **Type Safety**: SwiftData y predicados evitan errores.
+
+== Consideraciones
+
+- **Performance**: Consultas separadas; optimiza con índices si crece.
+- **Migraciones**: SwiftData maneja esquemas; añade features gradualmente.
+- **Testing**: Prueba observers y managers en aislamiento.
+- **Alternativas**: Para features complejas, considera relaciones bidireccionales si necesitas JOINs nativos.
+
+== Conclusión
+
+Esta arquitectura combina SwiftData con patrones observadores para una app modular y mantenible. `Task` permanece simple, mientras features se "conectan" dinámicamente. Es ideal para apps con crecimiento incremental de funcionalidades, asegurando separación de responsabilidades y facilidad de evolución.
