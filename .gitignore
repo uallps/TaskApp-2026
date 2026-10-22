@@ -1,0 +1,12 @@
+.DS_Store
+*.xcuserstate
+**/xcuserdata/
+**/.build/
+.swiftpm/
+DerivedData/
+build/
+*.hmap
+*.dia
+*.swiftdoc
+*.swiftmodule
+*.swiftsourceinfo
