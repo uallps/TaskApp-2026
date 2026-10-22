@@ -38,4 +38,4 @@ repositorio docente: el ejercicio enseña el trabajo aislado en ramas.
 
 Todavía no tenemos el backend de persistencia, plugins, tests de UI,
 notificaciones reales ni configuración Premium. Se encuentran en la rama
-`legacy/2025` del mismo nuevo repositorio con su historial auténtico.
+`archivo-2025` del mismo nuevo repositorio con su historial auténtico.

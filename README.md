@@ -4,6 +4,13 @@
 más una nueva rama `main` que reconstruye una **secuencia de clases reproducible**,
 con un **tag anotado por sesión**.
 
+## Descargar
+
+```sh
+git clone https://github.com/uallps/TaskApp-2026.git
+cd TaskApp-2026
+```
+
 ## Cambiar de sesión
 
 ```sh
@@ -34,7 +41,7 @@ automáticamente a las fechas de estas sesiones.
 ## Ramas y fuentes
 
 - `main`: versión progresiva del curso actual.
-- `legacy/2025`: **historial original completo**, conservado sin reescribir.
+- `archivo-2025`: **historial original completo**, conservado sin reescribir.
 - `2025-final`: apunta a `b06a188` del TaskApp original.
 - `sesion-01`…`sesion-05`: estados sucesivos de las clases.
 

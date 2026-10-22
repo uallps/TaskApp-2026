@@ -16,7 +16,7 @@ La secuencia se ha establecido siguiendo los materiales locales de
 **Nota:** solo estas cinco sesiones están numeradas explícitamente en los
 materiales que se han contrastado. Persistencia, plugins, testing y CI/CD
 constan en los commits históricos posteriores y se conservan íntegros en
-`legacy/2025`, pero aquí no se les asigna una sesión inventada.
+`archivo-2025`, pero aquí no se les asigna una sesión inventada.
 
 ## Fuentes e interpretación
 
@@ -37,7 +37,7 @@ git log --oneline --decorate --graph main
 git tag -l
 git switch --detach sesion-03
 git switch main
-git switch legacy/2025
+git switch archivo-2025
 ```
 
 No hagas commits estando en `detached HEAD`; crea antes una rama

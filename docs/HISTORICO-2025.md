@@ -1,6 +1,6 @@
 # TaskApp histórico: correspondencia con los commits de 2025
 
-La rama `legacy/2025` procede de la rama `sesion6` del proyecto original
+La rama `archivo-2025` procede de la rama `sesion6` del proyecto original
 en `/Users/frangar/PSI/TaskApp` y apunta exactamente al commit
 `b06a1884ce6192680086ed2e316300c1e3cad73c` publicado en
 [github.com/uallps/TaskApp](https://github.com/uallps/TaskApp).
@@ -29,12 +29,12 @@ certificadas con los números de sesión del curso 2025–2026*.
 
 El proyecto fuente tenía dos ramas locales distintas de `sesion6`:
 
-- `legacy/local-main-2025`: refleja el `main` del checkout local.
-- `legacy/local-backup-2025`: refleja su rama `backup`.
+- `archivo-2025-main-local`: refleja el `main` del checkout local.
+- `archivo-2025-backup-local`: refleja su rama `backup`.
 
 También se conservan las guías `.adoc` que estaban presentes en el checkout
 local pero no estaban registradas en Git. Están en
-`legacy/2025-guias:docs/guias-locales/`, con la etiqueta
+`archivo-2025-guias:docs/guias-locales/`, con la etiqueta
 `2025-guias-locales`. No se han incluido los HTML generados.
 
 ## Relación con la rama main
