@@ -1,32 +1,51 @@
 import SwiftUI
 
-// Sesión 2: primera interfaz declarativa. El producto se presentará
-// antes de pasar al modelo de tareas y al ViewModel.
+// Sesión 4: List, MVVM, closures y cambios reactivos de feature flags.
 struct ContentView: View {
-    @State private var nombre = ""
+    @StateObject private var viewModel = TaskListViewModel()
+    @StateObject private var config = AppConfig()
+    @State private var newTitle = ""
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("TaskApp Pro")
                 .font(.largeTitle.bold())
-
-            Text("Una familia de aplicaciones para gestionar tareas")
+            Text("\(viewModel.tasks.count) tareas · \(viewModel.completedCount) completadas")
                 .foregroundStyle(.secondary)
 
-            TextField("Introduce tu nombre", text: $nombre)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 360)
-
-            Text(nombre.isEmpty ? "¡Hola, mundo!" : "¡Hola, \(nombre)!")
-                .font(.title2)
-
-            Button("Reiniciar saludo") {
-                nombre = ""
+            HStack {
+                TextField("Nueva tarea", text: $newTitle)
+                    .textFieldStyle(.roundedBorder)
+                Button("Añadir") { addTask() }
+                    .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
+
+            HStack {
+                Toggle("Fechas", isOn: $config.showDueDates)
+                Toggle("Prioridades", isOn: $config.showPriorities)
+            }
+
+            List(viewModel.tasks) { task in
+                TaskRowView(
+                    task: task,
+                    showDueDates: config.showDueDates,
+                    showPriorities: config.showPriorities,
+                    onToggleCompletion: {
+                        viewModel.toggleCompletion(id: task.id)
+                    },
+                    onDelete: {
+                        viewModel.deleteTask(id: task.id)
+                    }
+                )
+            }
         }
-        .padding(24)
-        .frame(minWidth: 520, minHeight: 320)
+        .padding()
+    }
+
+    private func addTask() {
+        if viewModel.addTask(title: newTitle) {
+            newTitle = ""
+        }
     }
 }
 
