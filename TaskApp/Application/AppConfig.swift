@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // Sesión 4: una única configuración observable de la variante del producto.
 @MainActor
