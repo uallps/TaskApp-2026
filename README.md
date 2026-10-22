@@ -1,24 +1,50 @@
-# TaskApp Pro · repositorio por sesiones (LPS 2026–2027)
+# TaskApp Pro · un repositorio y cinco hitos docentes (LPS 2026–2027)
 
-Un único ejemplo de profesor que progresa mediante **un commit y un tag
-anotado por sesión**. Los estados se han reconstruido a partir de los apuntes
-locales de LPS y del TaskApp histórico de 2025.
+[TaskApp histórico de 2025](https://github.com/uallps/TaskApp) como referencia,
+más una nueva rama `main` que reconstruye una **secuencia de clases reproducible**,
+con un **tag anotado por sesión**.
+
+## Cambiar de sesión
 
 ```sh
-git tag --list
+git tag -l 'sesion-*'
 git switch --detach sesion-01
 swift Sesion01/TaskAppConsola.swift
 
-git switch --detach sesion-02
-open TaskApp.xcodeproj
+git switch --detach sesion-04
+open TaskApp.xcodeproj  # SwiftUI, MVVM y feature flags
 
-git switch main
+git switch --detach sesion-05
+open TaskApp.xcodeproj  # NavigationStack y Binding
+
+git switch main          # Volver a la última versión docente
 ```
 
-- **main**: los cinco hitos docentes reconstruidos, que crecen de forma lineal.
-- **legacy/2025**: los commits originales de 2025, sin cambios.
-- **2025-final**: etiqueta del último commit histórico de 2025.
+Las sesiones **1–5** siguen el temario local de LPS 2026–2027.
+Las fechas de los commits del proyecto original de 2025 **no equivalen**
+automáticamente a las fechas de estas sesiones.
 
-**TaskApp Pro** es el ejemplo común del profesor; los grupos desarrollan
-**BookApp**. Consulta [docs/SESIONES.md](docs/SESIONES.md) y
-[docs/PRODUCTO.md](docs/PRODUCTO.md).
+## Organización
+
+- `Sesion01/`: ejercicio de consola sobre diccionarios y fechas.
+- `TaskApp/`: código SwiftUI progresivo con modelo, ViewModel y vistas.
+- `docs/SESIONES.md`: mapa de tags y alcance didáctico.
+- `docs/FEATURE_MODEL.puml`: diagrama de características.
+
+## Ramas y fuentes
+
+- `main`: versión progresiva del curso actual.
+- `legacy/2025`: **historial original completo**, conservado sin reescribir.
+- `2025-final`: apunta a `b06a188` del TaskApp original.
+- `sesion-01`…`sesion-05`: estados sucesivos de las clases.
+
+**Importante:** las sesiones reconstruidas implementan el núcleo básico,
+las opciones de fecha/prioridad y navegación. No se atribuyen a clases no
+documentadas la persistencia, arquitectura de plugins, tests o CI/CD: estos
+elementos sí están disponibles en la rama original 2025.
+
+**TaskApp Pro** es la demostración del profesor. Los estudiantes realizan
+las mismas actividades de ingeniería con **BookApp**.
+
+Véase también [el mapa de sesiones](docs/SESIONES.md) y
+[las características](docs/PRODUCTO.md).
