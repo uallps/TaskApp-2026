@@ -64,3 +64,11 @@ reales**, sin adjudicarles sesiones inventadas: `hito-2025-json`,
 `hito-2025-ci` y `hito-2025-premium`.
 
 El detalle está en [docs/HISTORICO-2025.md](docs/HISTORICO-2025.md).
+
+## Demostración multiplataforma (material adicional)
+
+El experimento de **SwiftUI y SwiftCrossUI** con capturas verificadas de
+macOS y Linux vive en la rama
+[experimento-swiftcrossui](https://github.com/uallps/TaskApp-2026/tree/experimento-swiftcrossui/examples/taskapp-swiftcrossui),
+etiquetada como `demo-swiftcrossui-2026`. Se conserva separado de las
+sesiones docentes para no alterar la secuencia principal.
