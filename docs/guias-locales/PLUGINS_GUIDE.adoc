@@ -1,0 +1,527 @@
+= Guía de Plugins en TaskApp
+:toc:
+:toc-title: Índice
+:toclevels: 3
+:sectnums:
+:icons: font
+:source-highlighter: highlight.js
+
+== Introducción
+
+Esta guía explica el sistema de plugins implementado en TaskApp, una arquitectura modular que permite añadir y gestionar características de forma desacoplada y extensible.
+
+== ¿Qué son los Plugins?
+
+Los *plugins* son componentes modulares que extienden la funcionalidad de la aplicación sin modificar el código base. En TaskApp, los plugins permiten:
+
+* ✅ Añadir nuevas características de forma independiente
+* ✅ Habilitar/deshabilitar funcionalidades dinámicamente
+* ✅ Gestionar sus propios modelos de datos
+* ✅ Reaccionar a eventos del sistema (como eliminación de tareas)
+* ✅ Mantener el código organizado y mantenible
+
+[NOTE]
+====
+La arquitectura de plugins sigue el principio de *Responsabilidad Única* y el *Principio Abierto/Cerrado* de SOLID.
+====
+
+== Arquitectura del Sistema
+
+=== Diagrama de Componentes
+
+[source]
+----
+┌─────────────────────────────────────────────────────────┐
+│                      TaskApp                            │
+│                                                         │
+│  ┌───────────────┐         ┌──────────────────┐       │
+│  │   AppConfig   │────────▶│  PluginRegistry  │       │
+│  └───────────────┘         └──────────────────┘       │
+│         │                           │                  │
+│         │ creates                   │ manages          │
+│         ▼                           ▼                  │
+│  ┌─────────────────────────────────────────────┐      │
+│  │            Plugin Instances                  │      │
+│  │                                              │      │
+│  │  ┌──────────────┐  ┌──────────────┐        │      │
+│  │  │ DueDatePlugin│  │PriorityPlugin│  ...   │      │
+│  │  └──────────────┘  └──────────────┘        │      │
+│  └─────────────────────────────────────────────┘      │
+│                                                         │
+│  ┌──────────────────────────────────────────┐         │
+│  │      SwiftData Storage Provider          │         │
+│  │  ┌──────────┐  ┌──────────────┐         │         │
+│  │  │   Task   │  │ TaskDueDate  │  ...    │         │
+│  │  └──────────┘  └──────────────┘         │         │
+│  └──────────────────────────────────────────┘         │
+└─────────────────────────────────────────────────────────┘
+----
+
+=== Componentes Principales
+
+==== 1. PluginRegistry (Registro de Plugins)
+
+El `PluginRegistry` es el *cerebro* del sistema de plugins. Funciona como un registro centralizado usando el patrón *Singleton*.
+
+[source,swift]
+----
+class PluginRegistry {
+    static let shared = PluginRegistry()
+    
+    private(set) var registeredPlugins: [FeaturePlugin.Type] = []
+    private var pluginInstances: [FeaturePlugin] = []
+    
+    func register(_ pluginType: FeaturePlugin.Type) { ... }
+    func createPluginInstances(config: AppConfig) -> [FeaturePlugin] { ... }
+    func notifyTaskWillBeDeleted(_ task: Task) async { ... }
+    func notifyTaskDidDelete(taskId: UUID) async { ... }
+}
+----
+
+[TIP]
+====
+El patrón Singleton garantiza que solo existe una instancia del registro en toda la aplicación.
+====
+
+==== 2. Protocols de Plugins
+
+===== FeaturePlugin (Protocol Base)
+
+Define el contrato básico que todo plugin debe cumplir:
+
+[source,swift]
+----
+protocol FeaturePlugin: AnyObject {
+    /// Modelos SwiftData que el plugin necesita
+    var models: [any PersistentModel.Type] { get }
+    
+    /// Indica si el plugin está activo
+    var isEnabled: Bool { get }
+    
+    /// Inicializador con configuración
+    init(config: AppConfig)
+}
+----
+
+===== DataPlugin (Protocol Especializado)
+
+Extiende `FeaturePlugin` para plugins que necesitan reaccionar a eventos de datos:
+
+[source,swift]
+----
+protocol DataPlugin: FeaturePlugin {
+    /// Se ejecuta ANTES de eliminar una tarea
+    func willDeleteTask(_ task: Task) async
+    
+    /// Se ejecuta DESPUÉS de eliminar una tarea
+    func didDeleteTask(taskId: UUID) async
+}
+----
+
+[IMPORTANT]
+====
+Los métodos `willDeleteTask` y `didDeleteTask` permiten que los plugins limpien sus datos relacionados cuando se elimina una tarea.
+====
+
+== Implementación Paso a Paso
+
+=== Paso 1: Crear un Plugin
+
+Vamos a analizar `DueDatePlugin` como ejemplo:
+
+[source,swift]
+----
+class DueDatePlugin: DataPlugin {
+    // MARK: - Propiedades del Plugin
+    
+    var models: [any PersistentModel.Type] {
+        return [TaskDueDate.self]  // <1>
+    }
+    
+    var isEnabled: Bool {
+        return config.showDueDates  // <2>
+    }
+    
+    private let config: AppConfig
+    
+    // MARK: - Inicialización
+    
+    required init(config: AppConfig) {
+        self.config = config
+        print("🗓️ DueDatePlugin inicializado - Habilitado: \(isEnabled)")
+    }
+    
+    // MARK: - Gestión de Eventos
+    
+    func willDeleteTask(_ task: Task) async {
+        guard isEnabled else { return }  // <3>
+        
+        guard let context = SwiftDataContext.shared else { return }
+        
+        do {
+            // Buscar TaskDueDate asociados
+            let descriptor = FetchDescriptor<TaskDueDate>(
+                predicate: #Predicate { $0.taskUid == task.id }
+            )
+            
+            let dueDates = try context.fetch(descriptor)
+            
+            // Eliminar cada uno
+            for dueDate in dueDates {
+                context.delete(dueDate)  // <4>
+            }
+            
+            try context.save()
+            print("✅ DueDatePlugin: Fechas eliminadas")
+            
+        } catch {
+            print("❌ Error: \(error)")
+        }
+    }
+    
+    func didDeleteTask(taskId: UUID) async {
+        print("📝 DueDatePlugin: Tarea \(taskId) eliminada")
+    }
+}
+----
+<1> Define qué modelos de datos necesita el plugin
+<2> El plugin se habilita/deshabilita según la configuración
+<3> Solo actúa si está habilitado
+<4> Limpia los datos relacionados antes de que se elimine la tarea
+
+=== Paso 2: Registrar el Plugin en AppConfig
+
+[source,swift]
+----
+class AppConfig: ObservableObject {
+    @AppStorage("showDueDates") var showDueDates: Bool = true
+    @AppStorage("storageType") var storageType: StorageType = .json
+    
+    private var plugins: [FeaturePlugin] = []
+    
+    init() {
+        // Registrar el tipo de plugin
+        PluginRegistry.shared.register(DueDatePlugin.self)  // <1>
+        
+        // Crear instancias
+        self.plugins = PluginRegistry.shared.createPluginInstances(config: self)  // <2>
+    }
+    
+    private lazy var swiftDataProvider: SwiftDataStorageProvider = {
+        var schemas: [any PersistentModel.Type] = [Task.self]
+        
+        // Obtener modelos de plugins habilitados
+        schemas.append(contentsOf: 
+            PluginRegistry.shared.getEnabledModels(from: plugins))  // <3>
+        
+        let schema = Schema(schemas)
+        return SwiftDataStorageProvider(schema: schema)
+    }()
+}
+----
+<1> Registra el *tipo* del plugin (no una instancia)
+<2> Crea las instancias pasando la configuración
+<3> Solo los modelos de plugins habilitados se añaden al schema
+
+=== Paso 3: Notificar Eventos desde el ViewModel
+
+[source,swift]
+----
+@MainActor
+class TaskListViewModel: ObservableObject {
+    @Published var tasks: [Task] = []
+    
+    func removeTasks(atOffsets offsets: IndexSet) async {
+        let tasksToDelete = offsets.map { tasks[$0] }
+        
+        // 1. Notificar ANTES de eliminar
+        for task in tasksToDelete {
+            await PluginRegistry.shared.notifyTaskWillBeDeleted(task)  // <1>
+        }
+        
+        // 2. Eliminar las tareas
+        tasks.remove(atOffsets: offsets)
+        try? await storageProvider.saveTasks(tasks: tasks)
+        
+        // 3. Notificar DESPUÉS de eliminar
+        for task in tasksToDelete {
+            await PluginRegistry.shared.notifyTaskDidDelete(taskId: task.id)  // <2>
+        }
+    }
+}
+----
+<1> Los plugins limpian sus datos asociados
+<2> Los plugins pueden hacer post-procesamiento
+
+== Flujo de Eliminación de una Tarea
+
+[source]
+----
+Usuario elimina una tarea
+        │
+        ▼
+┌───────────────────────────────┐
+│ TaskListViewModel             │
+│  removeTasks(atOffsets:)      │
+└───────────────────────────────┘
+        │
+        │ 1. Notificar antes de eliminar
+        ▼
+┌───────────────────────────────┐
+│ PluginRegistry.shared         │
+│  notifyTaskWillBeDeleted()    │
+└───────────────────────────────┘
+        │
+        │ 2. Notificar a cada plugin habilitado
+        ▼
+┌───────────────────────────────┐
+│ DueDatePlugin                 │
+│  willDeleteTask()             │
+│  - Busca TaskDueDate          │
+│  - Elimina registros          │
+│  - Guarda cambios             │
+└───────────────────────────────┘
+        │
+        │ 3. Todos los plugins terminan
+        ▼
+┌───────────────────────────────┐
+│ TaskListViewModel             │
+│  - Elimina la tarea           │
+│  - Guarda en storage          │
+└───────────────────────────────┘
+        │
+        │ 4. Notificar después de eliminar
+        ▼
+┌───────────────────────────────┐
+│ PluginRegistry.shared         │
+│  notifyTaskDidDelete()        │
+└───────────────────────────────┘
+        │
+        │ 5. Post-procesamiento
+        ▼
+┌───────────────────────────────┐
+│ DueDatePlugin                 │
+│  didDeleteTask()              │
+│  - Logging                    │
+│  - Notificaciones (futuro)    │
+└───────────────────────────────┘
+----
+
+== Estructura de Archivos
+
+[source]
+----
+TaskApp/
+├── Application/
+│   └── AppConfig.swift                    # Configuración y registro
+├── Infraestructure/
+│   └── Plugins/
+│       └── PluginRegistry.swift           # Sistema de plugins
+└── Features/
+    └── DueDate/                           # Feature modular
+        ├── Models/
+        │   └── TaskDueDate.swift          # Modelo de datos
+        ├── Storage/
+        │   └── DueDateStorageProvider.swift
+        ├── Views/
+        │   ├── DueDateDetailView.swift
+        │   ├── DueDateRowView.swift
+        │   └── DueDateViewModel.swift
+        └── DueDatePlugin.swift            # ⭐ Plugin principal
+----
+
+[NOTE]
+====
+Cada feature tiene su propio directorio con todos sus componentes: modelos, vistas, storage y plugin.
+====
+
+== Ventajas del Sistema de Plugins
+
+[cols="1,3"]
+|===
+|Ventaja |Descripción
+
+|🔌 *Modularidad*
+|Cada feature es independiente y autocontenida
+
+|🎯 *Desacoplamiento*
+|El código core no conoce los detalles de las features
+
+|🔧 *Extensibilidad*
+|Añadir nuevas features es trivial
+
+|🧪 *Testeable*
+|Cada plugin se puede testear aisladamente
+
+|📊 *Escalabilidad*
+|Fácil mantener aplicaciones grandes
+
+|🔄 *Dinámico*
+|Habilitar/deshabilitar features en runtime
+
+|🧹 *Limpieza automática*
+|Los plugins limpian sus propios datos
+|===
+
+== Próximos Pasos
+
+=== Features Pendientes
+
+==== Priority Plugin
+
+[source,swift]
+----
+// Features/Priority/PriorityPlugin.swift
+class PriorityPlugin: DataPlugin {
+    var models: [any PersistentModel.Type] {
+        return [TaskPriority.self]
+    }
+    
+    var isEnabled: Bool {
+        return config.showPriorities
+    }
+    
+    // Implementar willDeleteTask() y didDeleteTask()
+}
+----
+
+==== Reminder Plugin
+
+[source,swift]
+----
+// Features/Reminders/ReminderPlugin.swift
+class ReminderPlugin: DataPlugin {
+    var models: [any PersistentModel.Type] {
+        return [TaskReminder.self]
+    }
+    
+    var isEnabled: Bool {
+        return config.enableReminders
+    }
+    
+    // Implementar willDeleteTask() y didDeleteTask()
+}
+----
+
+=== Extensiones Futuras
+
+==== ViewPlugin Protocol
+
+Para plugins que contribuyen vistas:
+
+[source,swift]
+----
+protocol ViewPlugin: FeaturePlugin {
+    /// Vista para la fila de la lista
+    func rowView(for task: Task) -> AnyView
+    
+    /// Vista para el detalle
+    func detailView(for task: Task) -> AnyView
+}
+----
+
+==== Eventos Adicionales
+
+[source,swift]
+----
+protocol DataPlugin: FeaturePlugin {
+    func willCreateTask(_ task: Task) async
+    func didCreateTask(_ task: Task) async
+    func willUpdateTask(_ task: Task) async
+    func didUpdateTask(_ task: Task) async
+    func willDeleteTask(_ task: Task) async
+    func didDeleteTask(taskId: UUID) async
+}
+----
+
+== Mejores Prácticas
+
+=== 1. Naming Conventions
+
+* Los plugins deben terminar en `Plugin`: `DueDatePlugin`, `PriorityPlugin`
+* Los modelos deben indicar su relación: `TaskDueDate`, `TaskPriority`
+* Usar nombres descriptivos y consistentes
+
+=== 2. Manejo de Errores
+
+[source,swift]
+----
+func willDeleteTask(_ task: Task) async {
+    guard isEnabled else { return }
+    
+    do {
+        // Lógica del plugin
+        try await deleteRelatedData(for: task)
+        print("✅ Plugin: Operación exitosa")
+    } catch {
+        print("❌ Plugin: Error - \(error.localizedDescription)")
+        // No propagar el error, registrar y continuar
+    }
+}
+----
+
+[WARNING]
+====
+Los plugins NO deben lanzar errores que interrumpan el flujo principal de la aplicación.
+====
+
+=== 3. Logging Informativo
+
+Use emojis para facilitar la lectura de logs:
+
+* 🗓️ Inicialización
+* ✅ Operación exitosa
+* ⚠️ Advertencia
+* ❌ Error
+* 📝 Información
+* 🗑️ Eliminación
+
+=== 4. Performance
+
+[source,swift]
+----
+func notifyTaskWillBeDeleted(_ task: Task) async {
+    let dataPlugins = pluginInstances.compactMap { $0 as? DataPlugin }
+    
+    // Ejecutar plugins en paralelo con TaskGroup
+    await withTaskGroup(of: Void.self) { group in
+        for plugin in dataPlugins where plugin.isEnabled {
+            group.addTask {
+                await plugin.willDeleteTask(task)
+            }
+        }
+    }
+}
+----
+
+[TIP]
+====
+Use `withTaskGroup` para ejecutar plugins en paralelo y mejorar el rendimiento.
+====
+
+== Resumen
+
+El sistema de plugins en TaskApp proporciona:
+
+1. ✅ *Arquitectura limpia* y mantenible
+2. ✅ *Separación de responsabilidades* clara
+3. ✅ *Gestión automática* del ciclo de vida de datos
+4. ✅ *Extensibilidad* sin modificar el código existente
+5. ✅ *Control* sobre qué features están activas
+
+Este sistema permite que TaskApp crezca de forma sostenible, añadiendo nuevas características sin comprometer la calidad del código base.
+
+[quote, Robert C. Martin (Uncle Bob)]
+____
+Software entities should be open for extension, but closed for modification.
+____
+
+== Referencias
+
+* https://en.wikipedia.org/wiki/Plugin_(computing)[Plugin Architecture - Wikipedia]
+* https://developer.apple.com/documentation/swiftdata[SwiftData - Apple Developer]
+* https://www.swiftbysundell.com/articles/building-a-plugin-system-in-swift/[Building Plugin Systems in Swift]
+
+---
+
+Última actualización: 12 de noviembre de 2025

@@ -1,0 +1,121 @@
+= Guía de Pruebas del Proyecto TaskApp
+:toc: left
+:icons: font
+:source-highlighter: highlightjs
+
+== Introducción
+
+Esta guía documenta la estrategia de pruebas implementada en el proyecto TaskApp. El objetivo es asegurar la calidad del código, verificar la lógica de negocio y prevenir regresiones mediante pruebas unitarias automatizadas.
+
+Utilizamos el framework moderno **Swift Testing** introducido en Xcode 16, que ofrece una sintaxis más declarativa y expresiva comparada con XCTest.
+
+== Estructura de las Pruebas
+
+Las pruebas se encuentran en el target `TaskAppTests` y están organizadas en dos áreas principales:
+
+1.  **Pruebas del Modelo (`TaskTests.swift`)**: Verifican la integridad de los datos y la lógica básica de las entidades.
+2.  **Pruebas del ViewModel (`TaskListViewModelTests.swift`)**: Verifican la lógica de presentación y la interacción con la capa de datos.
+
+== 1. Pruebas del Modelo (Task)
+
+El archivo `TaskTests.swift` contiene una suite de pruebas (`@Suite("Task Model Tests")`) dedicada a la estructura `Task`.
+
+=== Casos de Prueba
+
+*   **Inicialización por defecto**: Verifica que una tarea se cree con los valores predeterminados correctos (no completada, sin prioridad, sin fecha).
+*   **Inicialización completa**: Comprueba que todos los parámetros pasados al constructor se asignen correctamente.
+*   **Modificación de propiedades**: Asegura que las propiedades de la tarea sean mutables y reflejen los cambios.
+*   **Codable (JSON)**:
+    *   Verifica que una tarea pueda codificarse a JSON y decodificarse de vuelta sin perder información.
+    *   Comprueba el manejo correcto de valores opcionales (`nil`) durante la codificación.
+*   **Prioridad (Enum)**:
+    *   Utiliza *pruebas parametrizadas* para verificar todos los casos del enum `Priority`.
+    *   Valida los `rawValues` (cadenas de texto) asociados a cada prioridad.
+
+[source,swift]
+----
+@Test("Task initialization with default values")
+func testTaskInitializationWithDefaults() {
+    let task = Task(title: "Test Task")
+    #expect(task.title == "Test Task")
+    // ...
+}
+----
+
+== 2. Pruebas del ViewModel (TaskListViewModel)
+
+El archivo `TaskListViewModelTests.swift` verifica la lógica de negocio de la aplicación. Dado que el ViewModel interactúa con el almacenamiento de datos, utilizamos una técnica fundamental en testing: **Mocking**.
+
+=== El uso de Mocks (`MockStorageProvider`)
+
+Para aislar las pruebas del ViewModel y no depender del sistema de archivos real o de SwiftData, hemos creado un `MockStorageProvider`.
+
+*   **¿Qué es?**: Una clase falsa que simula ser un `StorageProvider`.
+*   **¿Qué hace?**:
+    *   Permite definir qué datos "devuelve" al cargar (`loadResult`).
+    *   Registra si se llamó a guardar y qué datos se intentaron guardar (`savedSnapshots`).
+    *   Permite simular errores (`shouldThrowOnLoad`).
+
+[source,swift]
+----
+final class MockStorageProvider: StorageProvider {
+    var loadResult: [Task] = []
+    var saveCallCount = 0
+    // ... implementación simulada ...
+}
+----
+
+=== Casos de Prueba del ViewModel
+
+*   **Carga Inicial**: Verifica que si no hay datos, se carguen tareas por defecto.
+*   **Carga de Datos**: Comprueba que el ViewModel actualice su lista `tasks` con lo que devuelve el proveedor de almacenamiento.
+*   **Manejo de Errores**: Asegura que la app no se bloquee si falla la carga de datos.
+*   **Agregar Tarea**: Verifica que al añadir una tarea:
+    1.  Se agregue a la lista en memoria.
+    2.  Se llame al método `saveTasks` del proveedor.
+*   **Eliminar Tarea**: Comprueba la eliminación y la persistencia del cambio.
+*   **Completar Tarea**: Verifica que cambiar el estado de una tarea también dispara el guardado.
+*   **Consistencia**: Pruebas complejas que agregan y luego eliminan para asegurar que el estado final es consistente.
+
+== Cómo Ejecutar las Pruebas
+
+=== Localmente en Xcode
+
+1.  Abre el proyecto en **Xcode**.
+2.  Presiona `Cmd + U` para ejecutar todas las pruebas.
+3.  O ve al **Test Navigator** (icono de rombo en la barra lateral izquierda) y ejecuta suites o tests individuales haciendo clic en el botón de play pequeño junto a ellos.
+
+=== Integración Continua (CI/CD)
+
+El proyecto está configurado con GitHub Actions para ejecutar automáticamente las pruebas en cada push o pull request. El workflow `.github/workflows/build.yml` incluye los siguientes pasos:
+
+1.  **Build**: Compila el proyecto para iOS y macOS.
+2.  **Test**: Ejecuta todas las pruebas unitarias usando `xcodebuild test`.
+3.  **Upload Artifacts**: Si el build y las pruebas son exitosos, archiva los productos.
+
+El paso de tests se ejecuta con el siguiente comando:
+
+[source,yaml]
+----
+- name: Run Tests for ${{ matrix.platform }}
+  run: |
+    xcodebuild test \
+      -project TaskApp.xcodeproj \
+      -scheme "${{ matrix.scheme }}" \
+      -sdk ${{ matrix.sdk }} \
+      -destination '${{ matrix.destination }}' \
+      -derivedDataPath ./DerivedData \
+      CODE_SIGN_IDENTITY="" \
+      CODE_SIGNING_REQUIRED=NO \
+      CODE_SIGNING_ALLOWED=NO
+----
+
+Este paso asegura que:
+
+*   Las pruebas se ejecuten en cada plataforma (iOS y macOS).
+*   Cualquier fallo en las pruebas detenga el workflow antes de crear artefactos o releases.
+*   El código en las ramas principales siempre esté validado.
+
+== Conclusión
+
+Esta suite de pruebas proporciona una base sólida para el desarrollo continuo. Cualquier nueva funcionalidad en `Task` o `TaskListViewModel` debe ir acompañada de su correspondiente prueba unitaria para mantener la integridad del proyecto.

@@ -1,0 +1,110 @@
+= Plugin Manifest Auto-generado (Opción B)
+:toc:
+:sectnums:
+
+== Resumen
+El manifiesto auto-generado permite descubrir y registrar plugins en tiempo de compilación manteniendo compatibilidad total con iOS y macOS. Cada plugin se compila como un target independiente, pero un script de build inspecciona la carpeta de *features*, genera un archivo Swift con la lista de plugins disponibles y la aplicación lo usa para registrarlos automáticamente al iniciar.
+
+== Arquitectura de Targets
+```
+TaskApp.xcodeproj
+├── TaskAppCore (framework con modelos, protocolos y registro)
+├── TaskApp (target principal)
+└── Features/
+    ├── DueDatePlugin (framework o librería)
+    ├── PriorityPlugin
+    └── ...
+```
+
+- `TaskAppCore` define `Task`, protocolos (`FeaturePlugin`, `DataPlugin`, `ViewPlugin`) y `PluginRegistry`.
+- Cada plugin vive en su propio target y depende de `TaskAppCore` para reutilizar contratos y modelos.
+- El `TaskApp` embebe los frameworks de plugins y consume el archivo `PluginManifest.swift` generado automáticamente.
+
+== Flujo de Compilación
+1. **Run Script Phase**: antes de `Compile Sources`, Xcode ejecuta `generate_plugin_manifest.sh`.
+2. El script inspecciona `TaskApp/Features/**` buscando archivos `*Plugin.swift`.
+3. Se crea (o actualiza) `TaskApp/Application/PluginManifest.swift` con la lista de tipos detectados.
+4. Si el contenido no cambia, el archivo no se reescribe para evitar recompilaciones innecesarias.
+5. Durante la compilación, el target principal enlaza `TaskAppCore` + frameworks de plugins y compila el manifiesto.
+
+== Script de Generación
+[source,bash]
+----
+#!/bin/bash
+set -e
+PROJECT_DIR="${SRCROOT}"
+FEATURES_DIR="${PROJECT_DIR}/TaskApp/Features"
+OUTPUT_FILE="${PROJECT_DIR}/TaskApp/Application/PluginManifest.swift"
+TEMP_FILE="${OUTPUT_FILE}.tmp"
+
+cat > "$TEMP_FILE" <<'EOF'
+// Auto-generated file
+import Foundation
+struct PluginManifest {
+    static let availablePlugins: [FeaturePlugin.Type] = [
+EOF
+
+PLUGIN_COUNT=0
+for plugin_file in "$FEATURES_DIR"/*/*.swift; do
+  filename=$(basename "$plugin_file" .swift)
+  if [[ $filename == *Plugin ]]; then
+    echo "        ${filename}.self," >> "$TEMP_FILE"
+    PLUGIN_COUNT=$((PLUGIN_COUNT + 1))
+  fi
+done
+
+cat >> "$TEMP_FILE" <<'EOF'
+    ]
+    static var count: Int { availablePlugins.count }
+    static var pluginNames: [String] { availablePlugins.map(String.init(describing:)) }
+}
+EOF
+
+if ! cmp -s "$TEMP_FILE" "$OUTPUT_FILE"; then
+  mv "$TEMP_FILE" "$OUTPUT_FILE"
+  echo "✨ PluginManifest.swift actualizado con $PLUGIN_COUNT plugins"
+else
+  rm "$TEMP_FILE"
+  echo "✓ PluginManifest.swift sin cambios ($PLUGIN_COUNT plugins)"
+fi
+----
+
+== Uso en `AppConfig`
+[source,swift]
+----
+class AppConfig: ObservableObject {
+    private var plugins: [FeaturePlugin] = []
+
+    init() {
+        for pluginType in PluginManifest.availablePlugins {
+            PluginRegistry.shared.register(pluginType)
+        }
+        print("✅ Plugins: \(PluginManifest.pluginNames)")
+        plugins = PluginRegistry.shared.createPluginInstances(config: self)
+    }
+}
+----
+
+== Ventajas
+- **Compilación independiente**: cada plugin puede compilarse y probarse por separado.
+- **Discovery automático**: no se necesita modificar `AppConfig` al añadir un plugin.
+- **Compatibilidad App Store**: todo queda enlazado en compile-time, sin `dlopen` ni carga dinámica.
+- **Rendimiento**: no se escanean clases en runtime, el manifiesto ya trae la lista final.
+- **Escalabilidad**: admite decenas de plugins con cero cambios manuales.
+
+== Pasos para Añadir un Plugin
+. Crear un nuevo target framework (`File > New > Target > Framework`).
+. Guardar el código del plugin en `TaskApp/Features/NuevoPlugin/NuevoPlugin.swift`.
+. Asegurarse de que el nombre del archivo y la clase terminen en `Plugin`.
+. Añadir dependencias contra `TaskAppCore` y embebido en el target principal.
+. Compilar: el script detectará el nuevo plugin y actualizará `PluginManifest.swift`.
+
+== Comparación con Discovery en Runtime
+[cols="1,1,1", options="header"]
+|===
+|Característica |Manifest auto-generado |Discovery runtime
+|Momento        |Build time             |App launch
+|Compatibilidad |✅ iOS/macOS App Store |⚠️ Solo macOS con carga dinámica
+|Rendimiento    |Muy alto (sin reflexión) |Depende de inspeccionar el runtime
+|Mantenimiento  |Automático via script  |Requiere depurar lógica de reflexión
+|===

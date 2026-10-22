@@ -1,0 +1,111 @@
+= Guía de Línea de Productos Software (SPL) en TaskApp
+:toc: left
+:icons: font
+:source-highlighter: highlightjs
+
+== Introducción
+
+Esta guía documenta la evolución de **TaskApp** hacia una **Línea de Productos Software (SPL)**. Hemos reestructurado el proyecto para soportar múltiples variantes de la aplicación desde una única base de código.
+
+Actualmente, soportamos dos productos diferenciados:
+
+1.  **TaskApp Standard**: La versión gratuita y predeterminada.
+2.  **TaskApp Premium**: Una versión avanzada que incluye funcionalidades exclusivas (actualmente: **Recordatorios**).
+
+== Implementación en Código
+
+La diferenciación entre productos se gestiona mediante **Feature Flags de Compilación**. Esto significa que el código de las funcionalidades Premium no solo se oculta, sino que **no se compila** en la versión Estándar, resultando en una aplicación más ligera y segura.
+
+=== Lógica Condicional (`AppConfig.swift`)
+
+Utilizamos directivas de preprocesador de Swift (`#if`, `#else`, `#endif`) para controlar la disponibilidad de características.
+
+[source,swift]
+----
+// En AppConfig.swift
+
+#if PREMIUM
+    // En la versión Premium, la propiedad es persistente y editable
+    @AppStorage("enableReminders")
+    var enableReminders: Bool = true
+#else
+    // En la versión Estándar, la propiedad es de solo lectura y siempre falsa
+    var enableReminders: Bool { false }
+#endif
+----
+
+=== Adaptación de la Interfaz (`Settings.swift`)
+
+La interfaz de usuario también se adapta automáticamente. Los controles para activar funciones Premium se ocultan en la versión Estándar.
+
+[source,swift]
+----
+// En Settings.swift
+
+#if PREMIUM
+    Toggle("Enable Reminders", isOn: $appConfig.enableReminders)
+#endif
+----
+
+== Configuración del Proyecto en Xcode
+
+Para que este sistema funcione, es necesario configurar Xcode para que entienda qué es "Premium". Como esta configuración es parte del archivo de proyecto (`.xcodeproj`) y no del código fuente, debe realizarse manualmente si se recrea el proyecto.
+
+=== Paso 1: Crear la Configuración de Construcción (Build Configuration)
+
+1.  En Xcode, selecciona el proyecto **TaskApp** en el navegador de archivos (icono azul raíz).
+2.  Selecciona el proyecto en la lista de "PROJECT" (no en "TARGETS").
+3.  Ve a la pestaña **Info**.
+4.  En la sección **Configurations**, verás `Debug` y `Release`.
+5.  Haz clic en el botón **+** y selecciona **Duplicate "Release" Configuration**.
+6.  Nombra la nueva configuración como **Release Premium**.
+
+=== Paso 2: Definir el Flag de Compilación
+
+1.  Selecciona el **Target** "TaskApp".
+2.  Ve a la pestaña **Build Settings**.
+3.  Busca **"Active Compilation Conditions"** (puedes filtrar por "swift flags").
+4.  Despliega la lista. Verás las columnas para `Debug`, `Release` y tu nueva `Release Premium`.
+5.  En la fila de **Release Premium**, añade el valor: `PREMIUM`.
+    *   *Nota: No lo añadas en `Release` ni `Debug` (a menos que quieras probarlo en desarrollo).*
+
+=== Paso 3: Crear el Esquema (Scheme)
+
+Para compilar y ejecutar fácilmente la versión Premium:
+
+1.  Haz clic en el selector de esquemas en la parte superior de Xcode (junto al botón de Play/Stop).
+2.  Selecciona **Manage Schemes...**.
+3.  Selecciona el esquema `TaskApp` y pulsa el botón de tres puntos (o "Duplicate").
+4.  Nombra el nuevo esquema como **TaskApp Premium**.
+5.  Edita el nuevo esquema:
+    *   En la sección **Run** (barra lateral izquierda), cambia la **Build Configuration** a **Release Premium**.
+    *   Haz lo mismo para la sección **Archive**.
+6.  Cierra el diálogo.
+
+Ahora puedes cambiar entre `TaskApp` y `TaskApp Premium` desde el selector superior para probar ambas versiones.
+
+== Integración Continua (CI/CD)
+
+Hemos actualizado el flujo de trabajo de GitHub Actions (`build.yml`) para automatizar la generación de ambos productos.
+
+=== Matriz de Construcción
+
+El pipeline ahora utiliza una matriz estratégica para generar 4 artefactos en paralelo:
+
+[source,yaml]
+----
+strategy:
+  matrix:
+    platform: [iOS, macOS]
+    scheme: ['TaskApp', 'TaskApp Premium']
+----
+
+Esto genera:
+*   iOS (Standard)
+*   iOS (Premium)
+*   macOS (Standard)
+*   macOS (Premium)
+
+=== Artefactos de Release
+
+Al crear una Release en GitHub, el sistema empaquetará y adjuntará automáticamente las versiones compiladas de ambos productos, claramente diferenciadas por nombre.

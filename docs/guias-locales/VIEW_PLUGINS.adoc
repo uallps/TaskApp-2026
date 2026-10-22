@@ -1,0 +1,512 @@
+= Extensión de Vistas mediante Plugins
+:toc:
+:toc-title: Contenidos
+:icons: font
+:source-highlighter: rouge
+
+== Introducción
+
+Este documento explica el sistema de **extensión de vistas** implementado en TaskApp, que permite desacoplar completamente las vistas personalizadas de plugins de las vistas core de la aplicación.
+
+== Problema Original
+
+=== Acoplamiento Directo
+
+Inicialmente, `TaskRowView` tenía referencias directas a componentes del plugin de fechas de vencimiento:
+
+[source,swift]
+----
+struct TaskRowView: View {
+    @StateObject private var dueDateViewModel: DueDateViewModel  // ❌ Acoplamiento
+    
+    var body: some View {
+        VStack {
+            Text(task.title)
+            if AppConfig.showDueDates {
+                DueDateRowView(viewModel: dueDateViewModel)  // ❌ Acoplamiento directo
+            }
+        }
+    }
+}
+----
+
+.Problemas de este enfoque:
+* `TaskRowView` debe conocer explícitamente cada plugin y sus vistas
+* Cada nuevo plugin requiere modificar `TaskRowView`
+* Violación del principio Open/Closed (abierto para extensión, cerrado para modificación)
+* Difícil de testear y mantener
+
+== Solución: Protocol ViewPlugin
+
+=== Arquitectura del Sistema
+
+El sistema de extensión de vistas se basa en **tres componentes principales**:
+
+[plantuml]
+----
+@startuml
+interface ViewPlugin {
+  + associatedtype TaskRowContent: View
+  + taskRowView(for: Task) -> TaskRowContent
+}
+
+class PluginRegistry {
+  + getTaskRowViews(for: Task) -> [AnyView]
+}
+
+class DueDatePlugin {
+  + taskRowView(for: Task) -> some View
+}
+
+class TaskRowView {
+  - task: Task
+  + body: some View
+}
+
+ViewPlugin <|.. DueDatePlugin
+PluginRegistry o-- ViewPlugin : gestiona >
+TaskRowView --> PluginRegistry : consulta >
+@enduml
+----
+
+=== 1. Protocol ViewPlugin
+
+El protocolo `ViewPlugin` define el contrato que deben cumplir los plugins que deseen proporcionar vistas personalizadas:
+
+[source,swift]
+----
+protocol ViewPlugin: FeaturePlugin {
+    /// Tipo asociado para la vista que provee el plugin
+    associatedtype TaskRowContent: View  // <1>
+    
+    /// Provee una vista personalizada para mostrar en la fila de tarea
+    @ViewBuilder  // <2>
+    func taskRowView(for task: Task) -> TaskRowContent  // <3>
+}
+----
+<1> **Associated Type**: Permite que cada plugin defina su propio tipo de vista
+<2> **@ViewBuilder**: Permite construcción declarativa con control de flujo (`if`, `switch`, etc.)
+<3> **Método requerido**: Cada plugin implementa cómo construir su vista
+
+==== ¿Por qué Associated Type?
+
+En Swift, los protocolos NO pueden usar `some View` directamente en sus requisitos:
+
+[source,swift]
+----
+// ❌ ERROR: 'some' type cannot be the return type of a protocol requirement
+func taskRowView(for task: Task) -> some View
+
+// ✅ CORRECTO: Usar associated type
+associatedtype TaskRowContent: View
+func taskRowView(for task: Task) -> TaskRowContent
+----
+
+.Ventajas del Associated Type:
+* **Type Safety**: El compilador conoce el tipo exacto en cada implementación
+* **Flexibilidad**: Cada plugin puede devolver tipos diferentes
+* **Performance**: No hay overhead de type erasure hasta que sea necesario
+
+==== ¿Por qué @ViewBuilder?
+
+El atributo `@ViewBuilder` es un **function builder** de SwiftUI que proporciona:
+
+[source,swift]
+----
+@ViewBuilder
+func taskRowView(for task: Task) -> some View {
+    // ✅ Permite control de flujo directo
+    if isEnabled {
+        DueDateRowView(viewModel: DueDateViewModel(task: task))
+    }
+    
+    // ✅ Permite múltiples vistas
+    if condition {
+        Text("Vista 1")
+        Text("Vista 2")
+    }
+}
+----
+
+.Beneficios de @ViewBuilder:
+* **Sintaxis declarativa**: Código más limpio y legible
+* **Control de flujo**: `if`, `else`, `switch` funcionan naturalmente
+* **Composición**: Puedes combinar múltiples vistas fácilmente
+* **Consistencia**: Mismo patrón que las vistas estándar de SwiftUI
+
+=== 2. Implementación en DueDatePlugin
+
+El plugin implementa `ViewPlugin` para proporcionar su vista personalizada:
+
+[source,swift]
+----
+class DueDatePlugin: DataPlugin, ViewPlugin {  // <1>
+    
+    // MARK: - ViewPlugin Methods
+    
+    @ViewBuilder
+    func taskRowView(for task: Task) -> some View {  // <2>
+        if isEnabled {  // <3>
+            DueDateRowView(viewModel: DueDateViewModel(task: task))  // <4>
+        }
+    }
+}
+----
+<1> El plugin implementa tanto `DataPlugin` como `ViewPlugin`
+<2> Implementación del método requerido con `@ViewBuilder`
+<3> Control de flujo natural: solo muestra la vista si está habilitado
+<4> Crea y devuelve la vista específica del plugin
+
+==== Type Erasure Automático
+
+Cuando `PluginRegistry` recopila las vistas, convierte el tipo asociado a `AnyView`:
+
+[source,swift]
+----
+func getTaskRowViews(for task: Task) -> [AnyView] {
+    return pluginInstances
+        .compactMap { $0 as? ViewPlugin }  // <1>
+        .filter { $0.isEnabled }           // <2>
+        .map { AnyView($0.taskRowView(for: task)) }  // <3>
+}
+----
+<1> Filtra solo los plugins que implementan `ViewPlugin`
+<2> Filtra solo los plugins habilitados
+<3> **Type Erasure**: Convierte cada vista específica a `AnyView` para almacenarlas en un array homogéneo
+
+WARNING: `AnyView` tiene un pequeño overhead de performance, pero es necesario para almacenar vistas de diferentes tipos en una colección.
+
+=== 3. Uso en TaskRowView
+
+`TaskRowView` ahora está completamente desacoplado y usa el registro de plugins:
+
+[source,swift]
+----
+struct TaskRowView: View {
+    let task: Task
+    
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text(task.title)
+            
+            // ✅ Obtiene dinámicamente las vistas de todos los plugins
+            ForEach(Array(PluginRegistry.shared.getTaskRowViews(for: task).enumerated()), 
+                    id: \.offset) { _, view in  // <1>
+                view
+            }
+        }
+    }
+}
+----
+<1> `ForEach` necesita un `id` único; usamos el índice (`.offset`) como identificador
+
+TIP: Usamos `Array(...enumerated())` porque `ForEach` requiere una colección con elementos `Identifiable` o un `id` explícito.
+
+== Flujo de Ejecución
+
+=== Diagrama de Secuencia
+
+[plantuml]
+----
+@startuml
+participant "TaskRowView" as TRV
+participant "PluginRegistry" as PR
+participant "DueDatePlugin" as DDP
+participant "SwiftUI" as SUI
+
+TRV -> PR: getTaskRowViews(for: task)
+activate PR
+
+PR -> PR: Filtrar ViewPlugins habilitados
+PR -> DDP: taskRowView(for: task)
+activate DDP
+
+DDP -> DDP: Verificar isEnabled
+DDP -> DDP: Crear DueDateViewModel
+DDP -> DDP: Crear DueDateRowView
+DDP --> PR: some View
+
+deactivate DDP
+
+PR -> PR: Convertir a AnyView
+PR --> TRV: [AnyView]
+
+deactivate PR
+
+TRV -> SUI: ForEach renderiza las vistas
+activate SUI
+SUI --> TRV: Vista renderizada
+deactivate SUI
+
+@enduml
+----
+
+=== Pasos Detallados
+
+1. **TaskRowView renderiza**: Cuando SwiftUI evalúa el `body` de `TaskRowView`
+2. **Solicita vistas**: Llama a `PluginRegistry.shared.getTaskRowViews(for: task)`
+3. **Filtrado de plugins**: El registro filtra solo los `ViewPlugin` habilitados
+4. **Invocación de plugins**: Llama a `taskRowView(for:)` en cada plugin
+5. **Construcción de vista**: Cada plugin construye su vista usando `@ViewBuilder`
+6. **Type erasure**: Las vistas se convierten a `AnyView`
+7. **Renderizado**: `ForEach` renderiza todas las vistas en orden
+
+== Ventajas del Sistema
+
+=== Desacoplamiento Total
+
+[cols="1,1"]
+|===
+| Antes | Después
+
+| `TaskRowView` conoce `DueDateRowView`
+| `TaskRowView` no conoce ninguna vista específica
+
+| Importa módulos de plugins
+| Solo importa `PluginRegistry`
+
+| Crea ViewModels específicos
+| Los plugins gestionan sus propios datos
+|===
+
+=== Extensibilidad
+
+Añadir un nuevo plugin con vista es **trivial**:
+
+[source,swift]
+----
+// 1. Crear el plugin
+class PriorityPlugin: ViewPlugin {
+    @ViewBuilder
+    func taskRowView(for task: Task) -> some View {
+        if isEnabled, let priority = task.priority {
+            PriorityBadgeView(priority: priority)
+        }
+    }
+}
+
+// 2. Registrarlo (en AppConfig)
+PluginRegistry.shared.register(PriorityPlugin.self)
+
+// 3. ¡Listo! La vista aparece automáticamente
+----
+
+NOTE: No necesitas modificar `TaskRowView` ni ninguna otra vista core.
+
+=== Open/Closed Principle
+
+El sistema cumple perfectamente este principio SOLID:
+
+* **Abierto para extensión**: Puedes añadir nuevos plugins sin límite
+* **Cerrado para modificación**: `TaskRowView` nunca necesita cambiar
+
+=== Testabilidad
+
+Cada componente puede testearse de forma independiente:
+
+[source,swift]
+----
+// Test del plugin
+func testDueDatePluginView() {
+    let plugin = DueDatePlugin(config: mockConfig)
+    let view = plugin.taskRowView(for: mockTask)
+    // Assertions...
+}
+
+// Test de TaskRowView con mock registry
+func testTaskRowView() {
+    let mockRegistry = MockPluginRegistry()
+    // Test con diferentes configuraciones de plugins
+}
+----
+
+== Consideraciones Técnicas
+
+=== Performance
+
+[cols="1,3"]
+|===
+| Aspecto | Impacto
+
+| **Type Erasure (AnyView)**
+| Pequeño overhead, aceptable para listas moderadas
+
+| **Filtrado de Plugins**
+| O(n) donde n = número de plugins (típicamente < 10)
+
+| **Creación de ViewModels**
+| Solo se crean cuando el plugin está habilitado
+
+| **Renderizado**
+| SwiftUI optimiza automáticamente con su diffing algorithm
+|===
+
+TIP: Si tienes muchos plugins o listas muy largas, considera usar `LazyVStack` en lugar de `VStack`.
+
+=== Orden de las Vistas
+
+Las vistas aparecen en el **orden de registro** de los plugins:
+
+[source,swift]
+----
+// En AppConfig
+PluginRegistry.shared.register(DueDatePlugin.self)     // Primero
+PluginRegistry.shared.register(PriorityPlugin.self)    // Segundo
+PluginRegistry.shared.register(TagsPlugin.self)        // Tercero
+----
+
+=== Gestión de Estado
+
+Cada plugin es responsable de:
+
+* **Crear sus propios ViewModels**
+* **Gestionar el estado de sus vistas**
+* **Sincronizar con sus datos persistentes**
+
+[source,swift]
+----
+@ViewBuilder
+func taskRowView(for task: Task) -> some View {
+    if isEnabled {
+        // El plugin crea y gestiona su ViewModel
+        let viewModel = DueDateViewModel(task: task)
+        DueDateRowView(viewModel: viewModel)
+    }
+}
+----
+
+== Comparación con Alternativas
+
+=== Alternativa 1: Modificadores de Vista (View Modifiers)
+
+[source,swift]
+----
+// Alternativa usando view modifiers
+struct TaskRowView: View {
+    var body: some View {
+        Text(task.title)
+            .dueDateRow(task: task)  // Modificador del plugin
+    }
+}
+----
+
+.Desventajas:
+* Requiere importar cada plugin
+* Menos control sobre el orden
+* Más difícil gestionar habilitación/deshabilitación
+
+=== Alternativa 2: Dependency Injection
+
+[source,swift]
+----
+// Alternativa con DI
+struct TaskRowView: View {
+    @Environment(\.dueDateProvider) var dueDateProvider
+    
+    var body: some View {
+        Text(task.title)
+        dueDateProvider.view(for: task)
+    }
+}
+----
+
+.Desventajas:
+* Necesitas múltiples `@Environment` (uno por plugin)
+* Más boilerplate
+* Menos escalable con muchos plugins
+
+=== Nuestra Solución: PluginRegistry
+
+.Ventajas:
+* **Centralizado**: Un solo punto de gestión
+* **Escalable**: Soporta N plugins sin cambios
+* **Declarativo**: Registro simple de plugins
+* **Type-safe**: El compilador valida todo
+
+== Patrones de Diseño Aplicados
+
+=== 1. Registry Pattern
+`PluginRegistry` actúa como registro centralizado de plugins.
+
+=== 2. Strategy Pattern
+Cada plugin implementa su propia estrategia de renderizado.
+
+=== 3. Dependency Inversion
+`TaskRowView` depende de la abstracción (`ViewPlugin`), no de implementaciones concretas.
+
+=== 4. Open/Closed Principle
+Abierto para extensión (nuevos plugins), cerrado para modificación (core no cambia).
+
+== Ejemplo Completo: Añadir un Nuevo Plugin
+
+Veamos cómo añadir un plugin de **etiquetas de colores**:
+
+[source,swift]
+----
+// 1. Crear el modelo (si es necesario)
+@Model
+final class TaskTag: PersistentModel {
+    var taskId: UUID
+    var color: String
+    var label: String
+}
+
+// 2. Crear el plugin
+class TagsPlugin: ViewPlugin {
+    let config: AppConfig
+    
+    var isEnabled: Bool { config.showTags }
+    
+    var models: [any PersistentModel.Type] {
+        [TaskTag.self]
+    }
+    
+    required init(config: AppConfig) {
+        self.config = config
+    }
+    
+    // 3. Implementar la vista
+    @ViewBuilder
+    func taskRowView(for task: Task) -> some View {
+        if isEnabled {
+            TagsRowView(taskId: task.id)  // Vista personalizada
+        }
+    }
+}
+
+// 4. Registrar en AppConfig.init()
+PluginRegistry.shared.register(TagsPlugin.self)
+
+// 5. Añadir toggle en Settings
+Toggle("Mostrar Etiquetas", isOn: $config.showTags)
+----
+
+¡Y listo! Las etiquetas aparecerán automáticamente en todas las filas de tareas.
+
+== Conclusiones
+
+El sistema de **ViewPlugin** proporciona:
+
+* ✅ **Desacoplamiento total** entre core y plugins
+* ✅ **Extensibilidad infinita** sin modificar código existente
+* ✅ **Type-safety** gracias a associated types
+* ✅ **API declarativa** con @ViewBuilder
+* ✅ **Testabilidad** mejorada
+* ✅ **Mantenibilidad** a largo plazo
+
+Este patrón es especialmente valioso en aplicaciones que:
+
+* Tienen arquitectura modular
+* Requieren alta extensibilidad
+* Necesitan habilitar/deshabilitar features dinámicamente
+* Tienen múltiples desarrolladores trabajando en paralelo
+
+== Recursos Adicionales
+
+* link:PLUGINS_GUIDE.adoc[Guía General de Plugins]
+* https://developer.apple.com/documentation/swiftui/viewbuilder[SwiftUI ViewBuilder Documentation]
+* https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/#Associated-Types[Swift Associated Types]
+
+---
+
+_Última actualización: 12 de noviembre de 2025_
