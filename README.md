@@ -48,3 +48,12 @@ las mismas actividades de ingeniería con **BookApp**.
 
 Véase también [el mapa de sesiones](docs/SESIONES.md) y
 [las características](docs/PRODUCTO.md).
+
+## Consultar el proyecto antiguo
+
+El historial de 2025 también está etiquetado por **hitos de código
+reales**, sin adjudicarles sesiones inventadas: `hito-2025-json`,
+`hito-2025-swiftdata`, `hito-2025-plugins`, `hito-2025-tests`,
+`hito-2025-ci` y `hito-2025-premium`.
+
+El detalle está en [docs/HISTORICO-2025.md](docs/HISTORICO-2025.md).
