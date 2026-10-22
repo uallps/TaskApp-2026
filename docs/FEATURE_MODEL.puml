@@ -1,0 +1,32 @@
+@startuml
+title TaskApp Pro — Diagrama de características (sesión 3)
+
+skinparam monochrome true
+top to bottom direction
+
+rectangle "TaskApp Pro" as Root
+rectangle "Gestión de tareas" as Core
+rectangle "Título" as Title
+rectangle "Estado: pendiente / completada" as Done
+rectangle "Fecha de vencimiento" as DateF
+rectangle "Prioridad" as PriorityF
+rectangle "Recordatorios" as Reminder
+rectangle "Persistencia" as Storage
+rectangle "JSON" as Json
+rectangle "Core Data / SwiftData" as Database
+
+Root --@ Core
+Core --@ Title
+Core --@ Done
+Root --o DateF
+Root --o PriorityF
+Root --o Reminder
+Root --@ Storage
+
+interface AlmacenamientoAlternativo as "XOR" #black
+Storage -- AlmacenamientoAlternativo
+AlmacenamientoAlternativo -- Json
+AlmacenamientoAlternativo -- Database
+
+Reminder ..> DateF : requires
+@enduml
