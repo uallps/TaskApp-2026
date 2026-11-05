@@ -11,8 +11,11 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-      - name: Compilar el proyecto de Xcode
-        run: xcodebuild -project TaskApp.xcodeproj -scheme TaskApp -destination 'platform=macOS' build CODE_SIGNING_ALLOWED=NO
+      - name: Compilar los productos del proyecto de Xcode
+        run: |
+          for scheme in "TaskApp" "TaskApp Prioridades"; do
+            xcodebuild -project TaskApp.xcodeproj -scheme "$scheme" -destination 'platform=macOS' build CODE_SIGNING_ALLOWED=NO
+          done
 
   linux:
     runs-on: ubuntu-latest
@@ -25,8 +28,10 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libgtk-4-dev libfontconfig-dev xvfb xdotool imagemagick fonts-dejavu
       - name: Compilar
         run: swift build --product TaskApp
-      - name: Arrancar y probar la interfaz
+      - name: Arrancar y probar la interfaz (producto base)
         run: bash .github/scripts/linux-ui.sh
+      - name: Arrancar y probar la interfaz (trait Prioridades)
+        run: bash .github/scripts/linux-ui.sh Prioridades
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -4,8 +4,8 @@ import Observation
 @Observable
 final class TaskListViewModel {
     var tasks: [Task] = [
-        Task(title: "Preparar clase"),
-        Task(title: "Revisar prácticas"),
+        Task(title: "Preparar clase", dueDate: Date(timeIntervalSince1970: 1_794_700_800), priority: .high),
+        Task(title: "Revisar prácticas", priority: .medium),
         Task(title: "Publicar materiales")
     ]
 

@@ -19,3 +19,10 @@ El mismo código de la carpeta `TaskApp/` funciona en los tres sistemas:
 
 En Linux y Windows, `Package.swift` añade un módulo llamado `SwiftUI` (carpeta `Compat/`)
 que reexporta SwiftOpenUI, así que `import SwiftUI` funciona sin cambiar el código.
+
+## Productos (desde la sesión 4)
+
+| Producto | Xcode (Mac) | Linux y Windows |
+|---|---|---|
+| Base | scheme `TaskApp` | `swift run TaskApp` |
+| Con prioridades | scheme `TaskApp Prioridades` (target con `Prioridades` en *Active Compilation Conditions*) | `swift run --traits Prioridades TaskApp` |

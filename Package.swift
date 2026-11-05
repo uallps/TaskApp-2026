@@ -13,6 +13,11 @@ let backend: Target.Dependency? = nil
 
 let package = Package(
     name: "TaskApp",
+    // Productos de la línea: cada trait activo es una variable de compilación (#if Prioridades).
+    // En Xcode, el mismo papel lo cumple el target «TaskApp Prioridades».
+    traits: [
+        .trait(name: "Prioridades", description: "Característica opcional: prioridad de la tarea"),
+    ],
     dependencies: [
         .package(url: "https://github.com/uallps/SwiftOpenUI.git", branch: "uallps"),
     ],

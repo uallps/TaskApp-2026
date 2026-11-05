@@ -31,6 +31,13 @@ $added = Count-Text "Tarea de ejemplo"
 Write-Host "Filas 'Tarea de ejemplo': $added"
 if ($added -ne 2) { throw "Se esperaban 2 tareas añadidas y hay $added" }
 
+# Sesión 4: el flag de fechas oculta y vuelve a mostrar la fecha de vencimiento.
+if ((Count-Like "Vence:*") -ne 1) { throw "Al empezar debería verse una fecha" }
+Click-At 450 55; Snap $w "4-sin-fechas"                         # Fechas: Sí
+if ((Count-Like "Vence:*") -ne 0) { throw "Con el flag apagado no debería verse ninguna fecha" }
+Click-At 450 55; Snap $w "5-con-fechas"                         # Fechas: No
+if ((Count-Like "Vence:*") -ne 1) { throw "Al volver a encender el flag debería verse la fecha" }
+
 if ($app.HasExited) { throw "La app se ha cerrado durante la prueba" }
 Stop-Process -Id $app.Id -Force
 Write-Host "Prueba de Windows superada"
