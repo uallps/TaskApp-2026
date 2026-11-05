@@ -22,14 +22,22 @@ click() { xdotool mousemove "$1" "$2" click 1; sleep 1; }
 alive() { kill -0 $APP 2>/dev/null || { echo "La app se ha cerrado"; cat "$OUT/app.log"; exit 1; }; }
 
 alive; shot 1-inicio
+# Barra de GTK: botones de la barra a la derecha y filas de la lista debajo.
 if [ "$VARIANT" = base ]; then
-    click 29 66;   shot 2-primera-completada
-    click 400 25;  shot 3-sin-fechas
-    click 400 575; shot 4-anadida
+    xdotool mousemove 300 173 click 3; sleep 1          # menú contextual de «Publicar materiales»
+    click 300 207; shot 2-tercera-borrada               # Eliminar tarea
+    click 300 124; shot 3-detalle                       # abre «Revisar prácticas»
+    xdotool type --delay 30 "Revisar prácticas de LPS"  # el título está seleccionado
+    click 33 125;  shot 4-detalle-editado               # Completada
+    click 42 26;   shot 5-lista-tras-volver             # Back
+    click 605 26;  shot 6-anadida                       # Añadir tarea
+    click 488 26;  shot 7-sin-fechas                    # Fechas
 else
-    click 453 25;  shot 2-sin-prioridades
-    click 453 25;  shot 3-con-prioridades
-    click 29 73;   shot 4-primera-completada
+    click 478 26;  shot 2-sin-prioridades
+    click 478 26;  shot 3-con-prioridades
+    click 34 82;   shot 4-primera-completada
+    click 300 67;  shot 5-detalle-primera
+    click 42 26;   shot 6-lista-tras-volver
 fi
 alive
 kill $APP

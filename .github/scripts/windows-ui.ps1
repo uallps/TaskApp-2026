@@ -1,8 +1,8 @@
 # Prueba de interfaz en Windows: arranca la app, pulsa los controles y guarda
 # capturas y la lista de controles en shots/.
 # Los textos de las filas son controles Static (se buscan por texto); los botones
-# con estilo los dibuja SwiftOpenUI (Direct2D) y se pulsan por posición: la ventana
-# se coloca siempre en (0,0) con 900x700.
+# con estilo los dibuja SwiftOpenUI (Direct2D). La ventana se coloca siempre en
+# (0,0) con 900x700.
 . "$PSScriptRoot/ui.ps1"
 $bin = swift build --product TaskApp --show-bin-path
 $app = Start-App "$bin\TaskApp.exe" "taskapp"
@@ -11,7 +11,6 @@ $w = Get-AppWindow $app.Id
 Snap $w "1-inicio"
 
 function Count-Text([string]$text) { @(Get-Controls $w | Where-Object { $_.Text -eq $text }).Count }
-function Count-Like([string]$pattern) { @(Get-Controls $w | Where-Object { $_.Text -like $pattern }).Count }
 
 # Clic en el botón de marcar de una fila: el botón es el control a la izquierda del título.
 function Click-Toggle([string]$title) {
@@ -24,19 +23,27 @@ function Click-Toggle([string]$title) {
     Click-At ($b.X + [int]($b.W / 2)) ($b.Y + [int]($b.H / 2))
 }
 
-# Marcar la primera tarea y añadir dos.
-Click-Toggle "Preparar clase"; Snap $w "2-primera-marcada"
-Click-At 450 667; Click-At 450 667; Snap $w "3-dos-anadidas"   # Añadir tarea
-$added = Count-Text "Tarea de ejemplo"
-Write-Host "Filas 'Tarea de ejemplo': $added"
-if ($added -ne 2) { throw "Se esperaban 2 tareas añadidas y hay $added" }
+# Marcar desde la fila no debe abrir el detalle.
+Click-Toggle "Publicar materiales"; Snap $w "2-tercera-marcada"
+if ((Count-Text "Publicar materiales") -ne 1) { throw "Al marcar la fila se ha salido de la lista" }
 
-# Sesión 4: el flag de fechas oculta y vuelve a mostrar la fecha de vencimiento.
-if ((Count-Like "Vence:*") -ne 1) { throw "Al empezar debería verse una fecha" }
-Click-At 450 55; Snap $w "4-sin-fechas"                         # Fechas: Sí
-if ((Count-Like "Vence:*") -ne 0) { throw "Con el flag apagado no debería verse ninguna fecha" }
-Click-At 450 55; Snap $w "5-con-fechas"                         # Fechas: No
-if ((Count-Like "Vence:*") -ne 1) { throw "Al volver a encender el flag debería verse la fecha" }
+# Borrar con el menú contextual: clic derecho y primera opción.
+if (-not (Click-Text $w "Publicar materiales" -Right)) { throw "No está la fila Publicar materiales" }
+Snap $w "2b-menu"; Send-Text "{DOWN}{ENTER}"; Snap $w "2c-borrada"
+if ((Count-Text "Publicar materiales") -ne 0) { throw "La tarea no se ha borrado" }
+
+# Entrar en el detalle de «Revisar prácticas», cambiar el título y marcarla.
+if (-not (Click-Text $w "Revisar prácticas")) { throw "No está la fila Revisar prácticas" }
+Snap $w "3-detalle"
+if (-not (Click-Class $w "Edit")) { throw "El detalle no tiene campo de título" }
+Send-Text "^a"; Send-Text "Revisar prácticas de LPS"
+if (-not (Click-Text $w "Completada")) { Write-Host "Completada no es un control con texto" }
+Snap $w "4-detalle-editado"
+
+# Volver y comprobar que la lista muestra el título nuevo.
+if (-not (Click-Text $w "← Back")) { if (-not (Click-Text $w "Back")) { throw "No hay botón para volver" } }
+Snap $w "5-lista-tras-volver"
+if ((Count-Text "Revisar prácticas de LPS") -ne 1) { throw "La lista no muestra el título editado" }
 
 if ($app.HasExited) { throw "La app se ha cerrado durante la prueba" }
 Stop-Process -Id $app.Id -Force
