@@ -2,7 +2,8 @@ import SwiftUI
 
 struct TaskListView: View {
     @State private var viewModel = TaskListViewModel()
-    @State private var config = AppConfig()
+    /// La configuración la crea la app y llega por el entorno: es la misma que edita Ajustes.
+    @Environment(AppConfig.self) private var config
 
     var body: some View {
         NavigationStack {
@@ -12,14 +13,6 @@ struct TaskListView: View {
                 }
             }
             .toolbar {
-                Button("Fechas: \(config.showDueDates ? "Sí" : "No")") {
-                    config.showDueDates.toggle()
-                }
-#if Prioridades
-                Button("Prioridades: \(config.showPriorities ? "Sí" : "No")") {
-                    config.showPriorities.toggle()
-                }
-#endif
                 Button("Añadir tarea") {
                     viewModel.addTask()
                 }

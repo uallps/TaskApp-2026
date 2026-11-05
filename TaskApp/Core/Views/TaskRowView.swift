@@ -11,6 +11,7 @@ struct TaskRowView: View {
         HStack {
             Button(action: toggleCompletion) {
                 Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(.taskAccent)
             }
             .buttonStyle(.plain)
             VStack(alignment: .leading) {
@@ -18,27 +19,15 @@ struct TaskRowView: View {
                     .strikethrough(task.isCompleted)
                 if showDueDates, let dueDate = task.dueDate {
                     Text("Vence: \(dueDate.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .taskCaption()
                 }
 #if Prioridades
                 if showPriorities, let priority = task.priority {
                     Text("Prioridad: \(priority.rawValue)")
-                        .font(.caption)
-                        .foregroundColor(priorityColor(for: priority))
+                        .taskCaption(color: priority.color)
                 }
 #endif
             }
         }
     }
-
-#if Prioridades
-    private func priorityColor(for priority: Priority) -> Color {
-        switch priority {
-        case .low: return .green
-        case .medium: return .yellow
-        case .high: return .red
-        }
-    }
-#endif
 }
